@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+httpx
+openai
+pydantic>=2
+sse-starlette

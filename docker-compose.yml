@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agentic
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agentic"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  merchant:
+    build: ./merchant
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  buyer:
+    build: ./buyer
+    ports:
+      - "8001:8001"
+    environment:
+      # Rule §1: buyer container must NEVER receive DATABASE_URL.
+      MERCHANT_BASE_URL: ${MERCHANT_BASE_URL:-http://merchant:8000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+
+  web:
+    build: ./web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - merchant
+      - buyer
+
+volumes:
+  pgdata:

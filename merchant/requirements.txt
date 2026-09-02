@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+psycopg[binary]
+pydantic>=2
+pydantic-settings
+httpx
+razorpay
+sse-starlette
