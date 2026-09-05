@@ -19,13 +19,16 @@ def _headers(idem: str | None = None) -> dict:
 
 
 async def http(method: str, path: str, json_body: dict | None = None, idem: str | None = None) -> dict:
-    async with httpx.AsyncClient(timeout=30) as c:
-        r = await c.request(method, MERCHANT_BASE_URL + path, json=json_body,
-                            headers=_headers(idem))
-        try:
-            return {"status_code": r.status_code, **r.json()}
-        except Exception:  # noqa: BLE001
-            return {"status_code": r.status_code, "error": r.text}
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.request(method, MERCHANT_BASE_URL + path, json=json_body,
+                                headers=_headers(idem))
+            try:
+                return {"status_code": r.status_code, **r.json()}
+            except Exception:  # noqa: BLE001
+                return {"status_code": r.status_code, "error": r.text}
+    except httpx.HTTPError as e:  # transient network failure — callers may retry/poll
+        return {"error": f"connection error: {e}"}
 
 
 # --- Tool implementations -------------------------------------------------
@@ -71,13 +74,15 @@ async def request_purchase_authority(scope: dict) -> dict:
 
 
 async def poll_mandate(mandate_id: str) -> dict:
-    """Poll every 2s up to 120s until ACTIVE — §6."""
+    """Poll every 2s up to 120s until ACTIVE — §6. Transient errors don't abort."""
+    last = {}
     for _ in range(60):
         m = await http("GET", f"/v1/mandates/{mandate_id}")
+        last = m
         if m.get("status") in ("ACTIVE", "EXPIRED", "REJECTED", "CONSUMED"):
             return m
         await asyncio.sleep(2)
-    return {"status": "TIMEOUT"}
+    return last or {"status": "TIMEOUT"}
 
 
 async def request_checkout(cart_id: str, mandate_id: str) -> dict:
@@ -88,10 +93,13 @@ async def request_checkout(cart_id: str, mandate_id: str) -> dict:
 
 
 async def poll_checkout(checkout_id: str) -> dict:
-    """Poll every 2s until PAID / FALLBACK_LINK_ISSUED / GATE_REJECTED / FAILED — §6."""
+    """Poll every 2s until PAID / FALLBACK_LINK_ISSUED / GATE_REJECTED / FAILED — §6.
+    Transient errors don't abort the poll."""
+    last = {}
     for _ in range(90):
         c = await http("GET", f"/v1/checkout/{checkout_id}")
+        last = c
         if c.get("status") in ("PAID", "FALLBACK_LINK_ISSUED", "GATE_REJECTED", "FAILED"):
             return c
         await asyncio.sleep(2)
-    return {"status": "TIMEOUT"}
+    return last or {"status": "TIMEOUT"}
