@@ -1,5 +1,6 @@
 """Agent loop — §6: OpenAI tool-calling, temperature=0, max 12 steps."""
 import json
+import os
 
 from openai import AsyncOpenAI
 
@@ -27,14 +28,14 @@ def build_tools() -> list[dict]:
     return [
         {"type": "function", "function": {"name": "discover_merchant",
          "description": "Fetch the merchant's machine-readable manifest (agents.json) to learn its capabilities.",
-         "parameters": {"type": "object", "properties": {"url": {"type": "string"}},
+         "parameters": {"type": "object", "properties": {"url": {"type": ["string", "null"]}},
                         "required": []}}},
         {"type": "function", "function": {"name": "search_catalog",
          "description": "Search the merchant catalog. max_paise is an upper price bound in paise.",
          "parameters": {"type": "object", "properties": {
-             "query": {"type": "string"}, "category": {"type": "string"},
+             "query": {"type": ["string", "null"]}, "category": {"type": "string"},
              "max_paise": {"type": "integer"}},
-             "required": ["query"]}}},
+             "required": []}}},
         {"type": "function", "function": {"name": "propose_cart",
          "description": "Create a cart with items [{sku,qty}] and mark it ready. Server computes all prices. rationale is REQUIRED.",
          "parameters": {"type": "object", "properties": {
@@ -70,6 +71,7 @@ def build_tools() -> list[dict]:
 
 async def run_tool(name: str, args: dict, emit) -> str:
     """Execute a tool; emit SSE events for the UI (tool_call/tool_result/consent/user_action/gate)."""
+    args = {k: v for k, v in (args or {}).items() if v is not None}  # LLMs emit nulls; drop them
     emit("tool_call", {"name": name, "args": args})
     if name == "discover_merchant":
         result = await tools.discover_merchant(args.get("url"))
@@ -119,7 +121,8 @@ async def run_tool(name: str, args: dict, emit) -> str:
 
 
 async def run_agent(goal: str, emit, api_key: str, model: str):
-    client = AsyncOpenAI(api_key=api_key)
+    base_url = os.environ.get("OPENAI_BASE_URL") or None
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     messages = [{"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": goal}]
     emit("agent_thought", {"text": f"Goal: {goal}"})
