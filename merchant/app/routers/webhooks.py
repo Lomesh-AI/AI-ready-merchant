@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -81,7 +82,7 @@ async def verify_on_timeout(checkout_id: str):
         co = db.get(Checkout, uuid.UUID(checkout_id))
         if not co or co.status != "AWAITING_PAYMENT" or not co.razorpay_order_id:
             return
-        payments = rp_client().order.fetch_payments(co.razorpay_order_id)
+        payments = rp_client().order.payments(co.razorpay_order_id)
         for p in payments.get("items", []):
             if p["status"] == "captured":
                 _mark_paid(db, co, p)
@@ -116,7 +117,7 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db),
                      decision="REJECT", reason="HMAC verification failed",
                      payload={"raw_len": len(raw)})
         db.commit()
-        return {"status": 400, "error": "invalid signature"}
+        return JSONResponse(status_code=400, content={"error": "invalid signature"})
     event = json.loads(raw)
     etype = event.get("event")
     payload = event.get("payload", {})
@@ -149,7 +150,7 @@ async def simulate_timeout(checkout_id: str, db: Session = Depends(get_db),
     co = db.get(Checkout, uuid.UUID(checkout_id))
     if not co:
         return {"error": "checkout not found"}
-    payments = rp_client().order.fetch_payments(co.razorpay_order_id) if co.razorpay_order_id else {"items": []}
+    payments = rp_client().order.payments(co.razorpay_order_id) if co.razorpay_order_id else {"items": []}
     for p in payments.get("items", []):
         if p["status"] == "captured":
             _mark_paid(db, co, p)
@@ -161,7 +162,8 @@ async def simulate_timeout(checkout_id: str, db: Session = Depends(get_db),
             break
     append_entry(db, actor="merchant_system", action_type="REPAIR",
                  checkout_id=co.id, decision="REPAIR",
-                 reason="simulate-timeout manual repair")
+                 reason="simulate-timeout manual repair",
+                 payload={"status": co.status, "razorpay_order_id": co.razorpay_order_id})
     db.commit()
     return {"checkout_id": str(co.id), "status": co.status,
             "user_action": ({"type": "payment_link", "url": co.user_action_url}
