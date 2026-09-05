@@ -31,6 +31,7 @@ services:
       MERCHANT_BASE_URL: ${MERCHANT_BASE_URL:-http://merchant:8000}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
 
   web:
     build: ./web
