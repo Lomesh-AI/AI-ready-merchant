@@ -48,15 +48,26 @@ export default function BuyerPage() {
     setEvents([]);
     setDone(null);
     setRunning(true);
-    const r = await fetch("/buyer-api/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ merchant_url: merchantUrl, goal }),
-    });
-    const { session_id } = await r.json();
+    push("status", { text: "Starting session… (first model response can take ~10s)" });
+    let session_id;
+    try {
+      const r = await fetch("/buyer-api/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchant_url: merchantUrl, goal }),
+      });
+      if (!r.ok) throw new Error(`buyer service returned ${r.status}`);
+      ({ session_id } = await r.json());
+    } catch (e) {
+      push("status", { text: `Could not reach buyer agent (${e}). Is it running? Try again.` });
+      setRunning(false);
+      return;
+    }
+    push("status", { text: `Session ${session_id.slice(0, 8)}… streaming events` });
     const es = new EventSource(`/buyer-api/session/${session_id}/stream`);
     esRef.current = es;
-    const on = (name, fn) => es.addEventListener(name, (e) => fn(JSON.parse(e.data)));
+    let gotEvent = false;
+    const on = (name, fn) => es.addEventListener(name, (e) => { gotEvent = true; fn(JSON.parse(e.data)); });
     on("agent_thought", (d) => push("thought", d));
     on("tool_call", (d) => push("tool_call", d));
     on("tool_result", (d) => push("tool_result", d));
@@ -73,6 +84,15 @@ export default function BuyerPage() {
       setRunning(false);
       es.close();
     });
+    es.onerror = () => {
+      if (!gotEvent) {
+        push("status", { text: "Stream error — buyer agent unreachable. Check containers and retry." });
+        setRunning(false);
+        es.close();
+      }
+      // after 'done' the server closes the stream; EventSource retry is harmless but we close it
+      if (done) es.close();
+    };
   }
 
   const kindStyle = {
@@ -111,8 +131,10 @@ export default function BuyerPage() {
           {running ? "Running…" : "Run agent"}
         </button>
         <p className="text-xs text-zinc-500">
-          Test cards — SUCCESS: <b>4111 1111 1111 1111</b> · FAILURE:{" "}
-          <b>4000 0000 0000 0002</b> (any future expiry, any CVV)
+          Test card (domestic Visa): <b>4111 1111 1111 1111</b> · any future expiry ·
+          any CVV → a mock bank page opens: click <b>Success</b> to pay, or{" "}
+          <b>Failure</b> to demo the retry/fallback path. International test cards
+          (4242…, 5105…) are rejected.
         </p>
       </div>
 
