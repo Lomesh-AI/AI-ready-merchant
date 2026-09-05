@@ -203,7 +203,7 @@ def refund(body: dict, db: Session = Depends(get_db), _=Depends(require_user)):
         raise HTTPException(404, "checkout/order not found")
     # find the payment id via order
     order = rp_client().order.fetch(co.razorpay_order_id)
-    payments = rp_client().order.fetch_payments(co.razorpay_order_id)
+    payments = rp_client().order.payments(co.razorpay_order_id)
     paid = next((p for p in payments.get("items", []) if p["status"] == "captured"), None)
     if not paid:
         raise HTTPException(409, "no captured payment to refund")
