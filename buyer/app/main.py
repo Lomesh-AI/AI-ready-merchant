@@ -47,8 +47,9 @@ class SessionIn(BaseModel):
 async def create_session(body: SessionIn):
     session_id = uuid.uuid4().hex
     _history[session_id] = []
-    if body.merchant_url:
-        tools.MERCHANT_BASE_URL = body.merchant_url
+    # merchant_url from the UI is a BROWSER-facing address (used for approval links).
+    # All agent→merchant HTTP calls use the internal MERCHANT_BASE_URL (docker network);
+    # overwriting it with a browser URL breaks connectivity inside the container.
     _emit(session_id, "status", {"text": "session created"})
 
     async def runner():
